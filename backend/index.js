@@ -16,28 +16,64 @@ const openai = new OpenAI({
 app.use(cors());
 app.use(express.json());
 
-async function getPatentData(patentID) {
+async function getPatentData(patentId) {
     const patentsData = JSON.parse(fs.readFileSync("sources/patents.json"));
-    return patentsData.find((patent) => patent.publication_number === patentID);
+    const mostProbablePatentId = getMostProbablePatentId(patentId, patentsData);
+    return patentsData.find((patent) => patent.publication_number === mostProbablePatentId);
 }
-  
+
+function getMostProbablePatentId(patentId, patentsData) {
+  const patentIds = patentsData.map((patent) => patent.publication_number);
+  const patentIdWithoutHyphen = patentId.replace(/-/g, "").toLowerCase();
+  const overlap = patentIds.map((id) => {
+    const idWithoutHyphen = id.replace(/-/g, "").toLowerCase();
+    const common = new Set(
+      [...patentIdWithoutHyphen].filter((x) => idWithoutHyphen.includes(x))
+    );
+    return { id, common: common.size };
+  });
+
+  overlap.sort((a, b) => b.common - a.common);
+
+  return overlap[0].id;
+};
+
 async function getCompanyProducts(companyName) {
     const productsData = JSON.parse(fs.readFileSync("sources/company_products.json"));
+    const mostProbableCompanyName = getMostProbableCompanyName(companyName, productsData);
     const company = productsData.companies.find(
-        (comp) => comp.name.toLowerCase() === companyName.toLowerCase()
+        (comp) => comp.name.toLowerCase() === mostProbableCompanyName.toLowerCase()
     );
     return company ? company.products : null;
 }
 
+function getMostProbableCompanyName(companyName, productsData) {
+  const companyNames = productsData.companies.map(
+    (companyProduct) => companyProduct.name
+  );
+
+  const companyNameLowercase = companyName.toLowerCase();
+
+  const overlap = companyNames.map((name) => {
+    const nameLowercase = name.toLowerCase();
+    const common = new Set(
+      [...companyNameLowercase].filter((x) => nameLowercase.includes(x))
+    );
+    return { name, common: common.size };
+  });
+
+  overlap.sort((a, b) => b.common - a.common);
+
+  return overlap[0].name;
+};
+
 async function checkInfringementWithOpenAI(patentID, companyName) {
-    // 查找專利資料
     const patentData = await getPatentData(patentID);
     if (!patentData) {
       console.log("Patent ID not found.");
       return { status: "error", message: `Patent with ID ${patentID} not found.` };
     }
   
-    // 查找公司產品資料
     const products = await getCompanyProducts(companyName);
     if (!products) {
       console.log("Company name not found.");
